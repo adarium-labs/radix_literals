@@ -1,0 +1,9 @@
+/obj/
+/lib/
+/alire/
+/config/
+.opencode
+.serena
+PROMPT.md
+CLAUDE.md
+AGENTS.md

@@ -1,0 +1,36 @@
+name: prove
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  gnatprove:
+    name: SPARK proof (level 1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: alire-project/setup-alire@v3
+        with:
+          version: 2.1.0
+
+      - name: Install gnatprove toolchain
+        run: |
+          alr -n toolchain --disable-assistant
+          alr -n toolchain --select gnatprove
+
+      - name: Build library
+        run: alr -n build
+
+      - name: Run gnatprove
+        run: alr gnatprove --level=1 --output=oneline
+
+      - name: Print gnatprove summary
+        if: always()
+        run: |
+          cat obj/development/gnatprove/gnatprove.out \
+            || cat obj/release/gnatprove/gnatprove.out \
+            || true

@@ -1,0 +1,33 @@
+name: build
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build library and run AUnit suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: alire-project/setup-alire@v3
+        with:
+          version: 2.1.0
+
+      - name: alr build (library)
+        run: alr -n build
+
+      - name: alr build (tests)
+        working-directory: tests
+        run: alr -n build
+
+      - name: Run AUnit suite
+        working-directory: tests
+        run: ./bin/tests
+
+      - name: Run demo
+        working-directory: tests
+        run: ./bin/demo

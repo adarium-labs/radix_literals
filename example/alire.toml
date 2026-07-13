@@ -1,0 +1,17 @@
+name = "example"
+description = ""
+version = "0.1.0-dev"
+
+authors = ["Heziode"]
+maintainers = ["Quentin DAUPRAT (Heziode) <contact@adarium.dev>"]
+licenses = "Apache-2.0"
+website = ""
+tags = []
+
+executables = ["example"]
+
+[[depends-on]]
+radix_literals = "*"
+
+[[pins]]
+radix_literals = { path = ".." }

@@ -1,0 +1,18 @@
+name = "tests"
+description = "AUnit test suite for radix_literals"
+version = "0.1.0-dev"
+
+authors = ["Heziode"]
+maintainers = ["Quentin DAUPRAT (Heziode) <contact@adarium.dev>"]
+licenses = "Apache-2.0"
+website = ""
+tags = ["spark", "parsing", "numbers", "literals", "testing"]
+
+executables = ["tests"]
+
+[[depends-on]]
+aunit = "^26.0.0"
+radix_literals = "*"
+
+[[pins]]
+radix_literals = { path = ".." }
