@@ -3,6 +3,7 @@
 
 pragma Ada_2022;
 
+with Ada.Numerics.Big_Numbers.Big_Reals;
 with AUnit.Assertions; use AUnit.Assertions;
 with Vaton;
 
@@ -11,6 +12,9 @@ package body Test_Support is
    use type RL.Parse_Status;
    use type RL.Error_Kind;
    use type Vaton.Number_Kind;
+
+   package Big_Real_To_LLF is new
+     Ada.Numerics.Big_Numbers.Big_Reals.Float_Conversions (Long_Long_Float);
 
    ---------------------
    -- Helper: LLI_Of  --
@@ -74,6 +78,9 @@ package body Test_Support is
             Got := Long_Long_Float (R.Value.Long_Float);
          when Vaton.Long_Long_Float =>
             Got := R.Value.Long_Long_Float;
+         when Vaton.Big_Real =>
+            --  More significant digits than Long_Long_Float'Digits.
+            Got := Big_Real_To_LLF.From_Big_Real (R.Value.Big_Real);
          when others =>
             Assert (False, Msg & ": expected float variant for " & Image);
       end case;

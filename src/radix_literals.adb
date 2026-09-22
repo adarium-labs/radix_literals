@@ -133,6 +133,15 @@ package body Radix_Literals with SPARK_Mode => Off is
       Append_Ok : Boolean;
       State     : Decimal_State := Whole_Start;
 
+      --  The exponent part ('e', sign, digits, underscores) is held back
+      --  until the end of input instead of being streamed: vaton returns 1
+      --  for an explicit zero exponent (Combine and Convert_Big_Real both
+      --  short-circuit on it), so a zero exponent must never reach it.
+      Exponent_Part    : String (1 .. Image'Length);
+      Exponent_Last    : Natural := 0;
+      Exponent_Is_Zero : Boolean := True;
+      Has_Fraction     : Boolean := False;
+
       function Input_Pos (I : Integer) return Positive is
         (Slice_Offset + (I - Image'First + 1));
    begin
@@ -273,12 +282,22 @@ package body Radix_Literals with SPARK_Mode => Off is
                   end if;
             end case;
 
-            --  Character is grammatically valid: feed to vaton.  Success is
-            --  only False on storage / capacity trouble, never on syntax.
-            Vaton.Append (P, Widen (C), Append_Ok, Decimal_Point);
-            if not Append_Ok then
-               return (Status => Error, Reason => Storage_Exhausted,
-                       Position => Pos);
+            --  Character is grammatically valid: feed to vaton, or hold it
+            --  back when it belongs to the exponent part.  Success is only
+            --  False on storage / capacity trouble, never on syntax.
+            if State in Exp_Sign .. Exp_Us then
+               Exponent_Last := Exponent_Last + 1;
+               Exponent_Part (Exponent_Last) := C;
+               if State = Exp_Digit and then C /= '0' then
+                  Exponent_Is_Zero := False;
+               end if;
+            else
+               Has_Fraction := Has_Fraction or else State = Frac_Start;
+               Vaton.Append (P, Widen (C), Append_Ok, Decimal_Point);
+               if not Append_Ok then
+                  return (Status => Error, Reason => Storage_Exhausted,
+                          Position => Pos);
+               end if;
             end if;
          end;
       end loop;
@@ -294,6 +313,29 @@ package body Radix_Literals with SPARK_Mode => Off is
          when Whole_Digit | Frac_Digit | Exp_Digit =>
             null;
       end case;
+
+      --  Stream the held-back exponent unless it is zero (x * 10**0 = x).
+      --  A dropped zero exponent on a numeral without fraction becomes ".0"
+      --  so that "7e0" stays a floating-point value, like "7e1".
+      Append_Ok := True;
+      if Exponent_Last > 0 then
+         if not Exponent_Is_Zero then
+            for I in 1 .. Exponent_Last loop
+               Vaton.Append
+                 (P, Widen (Exponent_Part (I)), Append_Ok, Decimal_Point);
+               exit when not Append_Ok;
+            end loop;
+         elsif not Has_Fraction then
+            Vaton.Append (P, Widen ('.'), Append_Ok, Decimal_Point);
+            if Append_Ok then
+               Vaton.Append (P, Widen ('0'), Append_Ok, Decimal_Point);
+            end if;
+         end if;
+      end if;
+      if not Append_Ok then
+         return (Status => Error, Reason => Storage_Exhausted,
+                 Position => Slice_Offset + Image'Length);
+      end if;
 
       if not Vaton.Is_Valid_Number (P) then
          --  State machine ruled out empty parts and dangling underscores,

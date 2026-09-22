@@ -16,5 +16,6 @@ package Float_Tests is
    procedure Signed_Exponent     (T : in out Test_Fixture);
    procedure Negative_Float      (T : in out Test_Fixture);
    procedure Fraction_And_Exp    (T : in out Test_Fixture);
+   procedure Zero_Exponent       (T : in out Test_Fixture);
 
 end Float_Tests;

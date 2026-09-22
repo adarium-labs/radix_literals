@@ -38,4 +38,28 @@ package body Float_Tests is
                               "grouped whole with fraction");
    end Fraction_And_Exp;
 
+   --  x * 10**0 = x. Vaton's Big_Real path (more significant digits than
+   --  Long_Long_Float'Digits: 15 on aarch64, 18 on x86_64) returns 1 for an
+   --  explicit zero exponent, dropping both value and sign. The 20+ digit
+   --  cases below take that path on every platform.
+   procedure Zero_Exponent (T : in out Test_Fixture) is
+   begin
+      Assert_Ok_Float_Approx ("2.5e0", 2.5, "fraction, e0");
+      Assert_Ok_Float_Approx ("2.5E+0", 2.5, "fraction, E+0");
+      Assert_Ok_Float_Approx ("2.5e-0_0", 2.5, "fraction, grouped e-00");
+      Assert_Ok_Float_Approx ("7e0", 7.0, "no fraction stays a float");
+      Assert_Ok_Float_Approx
+        ("3.14159265358979323846e0", 3.14159265358979323846,
+         "Big_Real path, fraction, e0");
+      Assert_Ok_Float_Approx
+        ("-12345678901234567890.5e0", -12345678901234567890.5,
+         "Big_Real path keeps the sign");
+      Assert_Ok_Float_Approx
+        ("12345678901234567890e+00", 12345678901234567890.0,
+         "Big_Real path, no fraction");
+      Assert_Ok_Float_Approx
+        ("1.2345678901234567890123e2", 123.45678901234567890123,
+         "Big_Real path, non-zero exponent still applied");
+   end Zero_Exponent;
+
 end Float_Tests;

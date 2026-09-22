@@ -88,6 +88,9 @@ package body Main_Suite is
       S.Add_Test (Flt_Caller.Create
         ("Float: Fraction_And_Exp",
          Float_Tests.Fraction_And_Exp'Access));
+      S.Add_Test (Flt_Caller.Create
+        ("Float: Zero_Exponent",
+         Float_Tests.Zero_Exponent'Access));
 
       --  Error tests
       S.Add_Test (Err_Caller.Create
