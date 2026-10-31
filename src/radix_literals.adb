@@ -3,8 +3,6 @@
 
 pragma Ada_2022;
 
-with Ada.Numerics.Big_Numbers.Big_Integers;
-
 package body Radix_Literals with SPARK_Mode => Off is
 
    package BI renames Ada.Numerics.Big_Numbers.Big_Integers;
@@ -27,6 +25,22 @@ package body Radix_Literals with SPARK_Mode => Off is
             null;
       end case;
    end record;
+
+   --  Outcome of a scanner. Failed = False means the literal is valid
+   --  according to its grammar; the scanned facts are returned separately.
+   type Scan_Result (Failed : Boolean := True) is record
+      case Failed is
+         when True =>
+            Reason   : Error_Kind;
+            Position : Positive;
+         when False =>
+            null;
+      end case;
+   end record;
+
+   function Failed_At (Reason : Error_Kind; Position : Positive)
+     return Scan_Result is
+     ((Failed => True, Reason => Reason, Position => Position));
 
    -----------------------------------------------------------------------
    --  Character helpers
@@ -115,7 +129,8 @@ package body Radix_Literals with SPARK_Mode => Off is
    end Detect_Format;
 
    -----------------------------------------------------------------------
-   --  Decimal path: hand off directly to vaton, position-mapped.
+   --  Decimal scanner: validates the decimal grammar and streams the
+   --  literal into vaton, with the exponent part held back.
    -----------------------------------------------------------------------
 
    type Decimal_State is
@@ -123,13 +138,14 @@ package body Radix_Literals with SPARK_Mode => Off is
       Frac_Start, Frac_Digit, Frac_Us,
       Exp_Sign, Exp_Start, Exp_Digit, Exp_Us);
 
-   function Parse_Decimal_Path
+   procedure Scan_Decimal
      (Image         : String;
       Slice_Offset  : Natural;   --  Image (I) has input pos = Slice_Offset+I
       Is_Negative   : Boolean;
-      Decimal_Point : Wide_Character) return Parse_Result
+      Decimal_Point : Wide_Character;
+      P             : out Vaton.Number_Pieces;
+      Outcome       : out Scan_Result)
    is
-      P         : Vaton.Number_Pieces;
       Append_Ok : Boolean;
       State     : Decimal_State := Whole_Start;
 
@@ -147,17 +163,12 @@ package body Radix_Literals with SPARK_Mode => Off is
    begin
       Vaton.Reset (P);
 
-      if Image'Length = 0 then
-         return (Status   => Error, Reason => Empty_Digits,
-                 Position => Positive'Max (1, Slice_Offset + 1));
-      end if;
-
       --  Inject a leading '-' into vaton so it records Whole_Is_Negative.
       if Is_Negative then
          Vaton.Append (P, '-', Append_Ok, Decimal_Point);
          if not Append_Ok then
-            return (Status => Error, Reason => Storage_Exhausted,
-                    Position => 1);
+            Outcome := Failed_At (Storage_Exhausted, 1);
+            return;
          end if;
       end if;
 
@@ -170,8 +181,8 @@ package body Radix_Literals with SPARK_Mode => Off is
             Pos : constant Positive  := Input_Pos (I);
          begin
             if Character'Pos (C) > 127 then
-               return (Status => Error, Reason => Invalid_Character,
-                       Position => Pos);
+               Outcome := Failed_At (Invalid_Character, Pos);
+               return;
             end if;
 
             case State is
@@ -179,11 +190,11 @@ package body Radix_Literals with SPARK_Mode => Off is
                   if Is_Ascii_Digit (C) then
                      State := Whole_Digit;
                   elsif C = '_' then
-                     return (Status => Error, Reason => Bad_Underscore,
-                             Position => Pos);
+                     Outcome := Failed_At (Bad_Underscore, Pos);
+                     return;
                   else
-                     return (Status => Error, Reason => Invalid_Character,
-                             Position => Pos);
+                     Outcome := Failed_At (Invalid_Character, Pos);
+                     return;
                   end if;
 
                when Whole_Digit =>
@@ -196,27 +207,27 @@ package body Radix_Literals with SPARK_Mode => Off is
                   elsif C = 'e' or else C = 'E' then
                      State := Exp_Sign;
                   else
-                     return (Status => Error, Reason => Invalid_Character,
-                             Position => Pos);
+                     Outcome := Failed_At (Invalid_Character, Pos);
+                     return;
                   end if;
 
                when Whole_Us =>
                   if Is_Ascii_Digit (C) then
                      State := Whole_Digit;
                   else
-                     return (Status => Error, Reason => Bad_Underscore,
-                             Position => Pos);
+                     Outcome := Failed_At (Bad_Underscore, Pos);
+                     return;
                   end if;
 
                when Frac_Start =>
                   if Is_Ascii_Digit (C) then
                      State := Frac_Digit;
                   elsif C = '_' then
-                     return (Status => Error, Reason => Bad_Underscore,
-                             Position => Pos);
+                     Outcome := Failed_At (Bad_Underscore, Pos);
+                     return;
                   else
-                     return (Status => Error, Reason => Empty_Digits,
-                             Position => Pos);
+                     Outcome := Failed_At (Empty_Digits, Pos);
+                     return;
                   end if;
 
                when Frac_Digit =>
@@ -227,16 +238,16 @@ package body Radix_Literals with SPARK_Mode => Off is
                   elsif C = 'e' or else C = 'E' then
                      State := Exp_Sign;
                   else
-                     return (Status => Error, Reason => Invalid_Character,
-                             Position => Pos);
+                     Outcome := Failed_At (Invalid_Character, Pos);
+                     return;
                   end if;
 
                when Frac_Us =>
                   if Is_Ascii_Digit (C) then
                      State := Frac_Digit;
                   else
-                     return (Status => Error, Reason => Bad_Underscore,
-                             Position => Pos);
+                     Outcome := Failed_At (Bad_Underscore, Pos);
+                     return;
                   end if;
 
                when Exp_Sign =>
@@ -245,22 +256,22 @@ package body Radix_Literals with SPARK_Mode => Off is
                   elsif C = '+' or else C = '-' then
                      State := Exp_Start;
                   elsif C = '_' then
-                     return (Status => Error, Reason => Bad_Underscore,
-                             Position => Pos);
+                     Outcome := Failed_At (Bad_Underscore, Pos);
+                     return;
                   else
-                     return (Status => Error, Reason => Invalid_Character,
-                             Position => Pos);
+                     Outcome := Failed_At (Invalid_Character, Pos);
+                     return;
                   end if;
 
                when Exp_Start =>
                   if Is_Ascii_Digit (C) then
                      State := Exp_Digit;
                   elsif C = '_' then
-                     return (Status => Error, Reason => Bad_Underscore,
-                             Position => Pos);
+                     Outcome := Failed_At (Bad_Underscore, Pos);
+                     return;
                   else
-                     return (Status => Error, Reason => Empty_Digits,
-                             Position => Pos);
+                     Outcome := Failed_At (Empty_Digits, Pos);
+                     return;
                   end if;
 
                when Exp_Digit =>
@@ -269,16 +280,16 @@ package body Radix_Literals with SPARK_Mode => Off is
                   elsif C = '_' then
                      State := Exp_Us;
                   else
-                     return (Status => Error, Reason => Invalid_Character,
-                             Position => Pos);
+                     Outcome := Failed_At (Invalid_Character, Pos);
+                     return;
                   end if;
 
                when Exp_Us =>
                   if Is_Ascii_Digit (C) then
                      State := Exp_Digit;
                   else
-                     return (Status => Error, Reason => Bad_Underscore,
-                             Position => Pos);
+                     Outcome := Failed_At (Bad_Underscore, Pos);
+                     return;
                   end if;
             end case;
 
@@ -295,8 +306,8 @@ package body Radix_Literals with SPARK_Mode => Off is
                Has_Fraction := Has_Fraction or else State = Frac_Start;
                Vaton.Append (P, Widen (C), Append_Ok, Decimal_Point);
                if not Append_Ok then
-                  return (Status => Error, Reason => Storage_Exhausted,
-                          Position => Pos);
+                  Outcome := Failed_At (Storage_Exhausted, Pos);
+                  return;
                end if;
             end if;
          end;
@@ -305,11 +316,11 @@ package body Radix_Literals with SPARK_Mode => Off is
       --  End-of-input acceptance check.
       case State is
          when Whole_Start | Frac_Start | Exp_Sign | Exp_Start =>
-            return (Status => Error, Reason => Empty_Digits,
-                    Position => Slice_Offset + Image'Length);
+            Outcome := Failed_At (Empty_Digits, Slice_Offset + Image'Length);
+            return;
          when Whole_Us | Frac_Us | Exp_Us =>
-            return (Status => Error, Reason => Bad_Underscore,
-                    Position => Slice_Offset + Image'Length);
+            Outcome := Failed_At (Bad_Underscore, Slice_Offset + Image'Length);
+            return;
          when Whole_Digit | Frac_Digit | Exp_Digit =>
             null;
       end case;
@@ -333,20 +344,20 @@ package body Radix_Literals with SPARK_Mode => Off is
          end if;
       end if;
       if not Append_Ok then
-         return (Status => Error, Reason => Storage_Exhausted,
-                 Position => Slice_Offset + Image'Length);
+         Outcome := Failed_At (Storage_Exhausted, Slice_Offset + Image'Length);
+         return;
       end if;
 
       if not Vaton.Is_Valid_Number (P) then
          --  State machine ruled out empty parts and dangling underscores,
          --  so the only remaining reason is length above vaton's digit
          --  limit (Is_Valid_Partial_Number -> Overflow).
-         return (Status => Error, Reason => Overflow,
-                 Position => Slice_Offset + Image'Length);
+         Outcome := Failed_At (Overflow, Slice_Offset + Image'Length);
+         return;
       end if;
 
-      return (Status => Ok, Value => Vaton.To_Number (P));
-   end Parse_Decimal_Path;
+      Outcome := (Failed => False);
+   end Scan_Decimal;
 
    -----------------------------------------------------------------------
    --  Underscore state machine + digit validation for a non-decimal run.
@@ -471,7 +482,9 @@ package body Radix_Literals with SPARK_Mode => Off is
    end Fast_Accumulate;
 
    -----------------------------------------------------------------------
-   --  Big_Integer accumulator with optional Ada based exponent.
+   --  Big_Integer accumulator with optional Ada based exponent.  Exponent
+   --  = 0 yields the digit value alone; a positive exponent multiplies by
+   --  Base ** Exponent (only the Parse path asks for that).
    -----------------------------------------------------------------------
 
    procedure Big_Accumulate
@@ -509,6 +522,12 @@ package body Radix_Literals with SPARK_Mode => Off is
    -----------------------------------------------------------------------
 
    function LLI_To_Vaton_Number (V : Long_Long_Integer) return Vaton.Number is
+      --  Where Long_Integer is as wide as Long_Long_Integer (x86_64 Linux)
+      --  the second range test is statically true; GNAT reports that as
+      --  dead code.  The test is kept so the kind choice stays the same on
+      --  targets where the widths differ.
+      pragma Warnings (Off, "range test optimized away");
+      pragma Warnings (Off, "value is known to be in range");
    begin
       if V in Long_Long_Integer (Integer'First) ..
               Long_Long_Integer (Integer'Last)
@@ -623,56 +642,64 @@ package body Radix_Literals with SPARK_Mode => Off is
    end Finish_Non_Decimal;
 
    -----------------------------------------------------------------------
-   --  Prefixed path: 0x / 0o / 0b, no exponent grammar.  A trailing
+   --  Prefixed scanner: 0x / 0o / 0b, no exponent grammar.  A trailing
    --  'e'/'E' on a hex literal is accepted as a hex digit.
    -----------------------------------------------------------------------
 
-   function Parse_Prefixed_Path
+   procedure Scan_Prefixed
      (Image        : String;   --  the entire un-signed body slice
       Slice_Offset : Natural;  --  input pos of Image (Image'First) is +1
       Base         : Base_Range;
-      Is_Negative  : Boolean) return Parse_Result
+      Digits_First : out Integer;
+      Digits_Last  : out Integer;
+      Outcome      : out Scan_Result)
    is
-      Digits_First : constant Integer := Image'First + 2;
-      Digits_Last  : constant Integer := Image'Last;
-      Bad_Pos      : Natural;
-      Bad_Reason   : Error_Kind;
+      Bad_Pos    : Natural;
+      Bad_Reason : Error_Kind;
    begin
+      Digits_First := Image'First + 2;
+      Digits_Last  := Image'Last;
       if Digits_First > Digits_Last then
-         return (Status => Error, Reason => Empty_Digits,
-                 Position => Slice_Offset + 2);
+         Outcome := Failed_At (Empty_Digits, Slice_Offset + 2);
+         return;
       end if;
       Validate_Digit_Run
         (Image, Digits_First, Digits_Last, Base, Slice_Offset,
          Bad_Pos, Bad_Reason);
       if Bad_Pos /= 0 then
-         return (Status => Error, Reason => Bad_Reason, Position => Bad_Pos);
+         Outcome := Failed_At (Bad_Reason, Bad_Pos);
+         return;
       end if;
-      return Finish_Non_Decimal
-               (Image, Digits_First, Digits_Last, Base, 0, Is_Negative,
-                End_Pos => Slice_Offset + Image'Length);
-   end Parse_Prefixed_Path;
+      Outcome := (Failed => False);
+   end Scan_Prefixed;
 
    -----------------------------------------------------------------------
-   --  Based path:  base '#' digits '#' [ ('e'|'E') ['+'] digits ]
+   --  Based scanner:  base '#' digits '#' [ ('e'|'E') ['+'] digits ]
    -----------------------------------------------------------------------
 
-   function Parse_Based_Path
+   procedure Scan_Based
      (Image        : String;
       Slice_Offset : Natural;
-      Is_Negative  : Boolean) return Parse_Result
+      Base         : out Base_Range;
+      Digits_First : out Integer;
+      Digits_Last  : out Integer;
+      Exponent     : out Natural;
+      Outcome      : out Scan_Result)
    is
       First_Hash    : Integer := 0;
       Second_Hash   : Integer := 0;
       Base_Value    : Natural := 0;
       Base_First    : constant Integer := Image'First;
       Base_Last     : Integer;
-      Digits_First  : Integer;
-      Digits_Last   : Integer;
       Exp_Value     : Natural := 0;
       Bad_Pos       : Natural;
       Bad_Reason    : Error_Kind;
    begin
+      Base := 2;
+      Digits_First := 1;
+      Digits_Last  := 0;
+      Exponent     := 0;
+
       for I in Image'Range loop
          if Image (I) = '#' then
             First_Hash := I;
@@ -680,29 +707,33 @@ package body Radix_Literals with SPARK_Mode => Off is
          end if;
       end loop;
       if First_Hash = 0 then
-         return (Status => Error, Reason => Malformed_Based_Literal,
-                 Position => Slice_Offset + Image'Length);
+         Outcome := Failed_At (Malformed_Based_Literal,
+                               Slice_Offset + Image'Length);
+         return;
       end if;
       Base_Last := First_Hash - 1;
 
       if Base_Last < Base_First then
-         return (Status => Error, Reason => Empty_Digits,
-                 Position => Slice_Offset + 1);
+         Outcome := Failed_At (Empty_Digits, Slice_Offset + 1);
+         return;
       end if;
       for I in Base_First .. Base_Last loop
          if not Is_Ascii_Digit (Image (I)) then
-            return (Status => Error, Reason => Invalid_Character,
-                    Position => Slice_Offset + (I - Image'First + 1));
+            Outcome := Failed_At (Invalid_Character,
+                                  Slice_Offset + (I - Image'First + 1));
+            return;
          end if;
          if Base_Value > (Natural'Last - Digit_Value (Image (I))) / 10 then
-            return (Status => Error, Reason => Base_Out_Of_Range,
-                    Position => Slice_Offset + (I - Image'First + 1));
+            Outcome := Failed_At (Base_Out_Of_Range,
+                                  Slice_Offset + (I - Image'First + 1));
+            return;
          end if;
          Base_Value := Base_Value * 10 + Digit_Value (Image (I));
       end loop;
       if Base_Value not in 2 .. 16 then
-         return (Status => Error, Reason => Base_Out_Of_Range,
-                 Position => Slice_Offset + (Base_Last - Image'First + 1));
+         Outcome := Failed_At (Base_Out_Of_Range,
+                               Slice_Offset + (Base_Last - Image'First + 1));
+         return;
       end if;
 
       for I in First_Hash + 1 .. Image'Last loop
@@ -711,13 +742,15 @@ package body Radix_Literals with SPARK_Mode => Off is
             exit;
          end if;
          if Image (I) = '.' then
-            return (Status => Error, Reason => Invalid_Character,
-                    Position => Slice_Offset + (I - Image'First + 1));
+            Outcome := Failed_At (Invalid_Character,
+                                  Slice_Offset + (I - Image'First + 1));
+            return;
          end if;
       end loop;
       if Second_Hash = 0 then
-         return (Status => Error, Reason => Malformed_Based_Literal,
-                 Position => Slice_Offset + Image'Length);
+         Outcome := Failed_At (Malformed_Based_Literal,
+                               Slice_Offset + Image'Length);
+         return;
       end if;
       Digits_First := First_Hash + 1;
       Digits_Last  := Second_Hash - 1;
@@ -726,7 +759,8 @@ package body Radix_Literals with SPARK_Mode => Off is
         (Image, Digits_First, Digits_Last, Base_Range (Base_Value),
          Slice_Offset, Bad_Pos, Bad_Reason);
       if Bad_Pos /= 0 then
-         return (Status => Error, Reason => Bad_Reason, Position => Bad_Pos);
+         Outcome := Failed_At (Bad_Reason, Bad_Pos);
+         return;
       end if;
 
       if Second_Hash < Image'Last then
@@ -735,23 +769,27 @@ package body Radix_Literals with SPARK_Mode => Off is
             Ch   : Character := Image (I);
          begin
             if Ch /= 'e' and then Ch /= 'E' then
-               return (Status => Error, Reason => Malformed_Based_Literal,
-                       Position => Slice_Offset + (I - Image'First + 1));
+               Outcome := Failed_At (Malformed_Based_Literal,
+                                     Slice_Offset + (I - Image'First + 1));
+               return;
             end if;
             I := I + 1;
             if I > Image'Last then
-               return (Status => Error, Reason => Empty_Digits,
-                       Position => Slice_Offset + (I - Image'First + 1));
+               Outcome := Failed_At (Empty_Digits,
+                                     Slice_Offset + (I - Image'First + 1));
+               return;
             end if;
             if Image (I) = '+' then
                I := I + 1;
             elsif Image (I) = '-' then
-               return (Status => Error, Reason => Unexpected_Exponent,
-                       Position => Slice_Offset + (I - Image'First + 1));
+               Outcome := Failed_At (Unexpected_Exponent,
+                                     Slice_Offset + (I - Image'First + 1));
+               return;
             end if;
             if I > Image'Last then
-               return (Status => Error, Reason => Empty_Digits,
-                       Position => Slice_Offset + (I - Image'First + 1));
+               Outcome := Failed_At (Empty_Digits,
+                                     Slice_Offset + (I - Image'First + 1));
+               return;
             end if;
             declare
                Prev_Was_Digit : Boolean := False;
@@ -761,65 +799,88 @@ package body Radix_Literals with SPARK_Mode => Off is
                   Ch := Image (I);
                   if Ch = '_' then
                      if not Prev_Was_Digit then
-                        return (Status => Error, Reason => Bad_Underscore,
-                                Position =>
-                                  Slice_Offset + (I - Image'First + 1));
+                        Outcome := Failed_At (Bad_Underscore,
+                                              Slice_Offset
+                                                + (I - Image'First + 1));
+                        return;
                      end if;
                      Prev_Was_Digit := False;
                   elsif Is_Ascii_Digit (Ch) then
                      if Exp_Value > (Natural'Last - Digit_Value (Ch)) / 10
                      then
-                        return (Status => Error, Reason => Overflow,
-                                Position =>
-                                  Slice_Offset + (I - Image'First + 1));
+                        Outcome := Failed_At (Overflow,
+                                              Slice_Offset
+                                                + (I - Image'First + 1));
+                        return;
                      end if;
                      Exp_Value := Exp_Value * 10 + Digit_Value (Ch);
                      Prev_Was_Digit := True;
                      Any_Seen := True;
                   else
-                     return (Status => Error, Reason => Invalid_Character,
-                             Position =>
-                               Slice_Offset + (I - Image'First + 1));
+                     Outcome := Failed_At (Invalid_Character,
+                                           Slice_Offset
+                                             + (I - Image'First + 1));
+                     return;
                   end if;
                   I := I + 1;
                end loop;
                if not Any_Seen then
-                  return (Status => Error, Reason => Empty_Digits,
-                          Position => Slice_Offset + Image'Length);
+                  Outcome := Failed_At (Empty_Digits,
+                                        Slice_Offset + Image'Length);
+                  return;
                end if;
                if not Prev_Was_Digit then
-                  return (Status => Error, Reason => Bad_Underscore,
-                          Position => Slice_Offset + Image'Length);
+                  Outcome := Failed_At (Bad_Underscore,
+                                        Slice_Offset + Image'Length);
+                  return;
                end if;
             end;
          end;
       end if;
 
-      return Finish_Non_Decimal
-               (Image, Digits_First, Digits_Last,
-                Base_Range (Base_Value), Exp_Value, Is_Negative,
-                End_Pos => Slice_Offset + Image'Length);
-   end Parse_Based_Path;
+      Base     := Base_Range (Base_Value);
+      Exponent := Exp_Value;
+      Outcome  := (Failed => False);
+   end Scan_Based;
 
    -----------------------------------------------------------------------
-   --  Public String entry point
+   --  Shared front end for Parse and Parse_Exact: sign, empty checks and
+   --  format dispatch to the scanners.  On success, Lit describes the
+   --  literal: for Format_Decimal the digits and exponent live in P; for
+   --  the other formats they are the digit run [Digits_First .. Digits_Last]
+   --  of Image (absolute indices) and the Ada based exponent.
    -----------------------------------------------------------------------
 
-   function Parse
+   type Scanned_Literal is record
+      Kind         : Format_Kind := Format_Empty;
+      Is_Negative  : Boolean := False;
+      Base         : Base_Range := 2;
+      Digits_First : Integer := 1;
+      Digits_Last  : Integer := 0;
+      Exponent     : Natural := 0;
+   end record;
+
+   procedure Scan_Literal
      (Image         : String;
-      Decimal_Point : Wide_Character := '.') return Parse_Result
+      Decimal_Point : Wide_Character;
+      P             : out Vaton.Number_Pieces;
+      Lit           : out Scanned_Literal;
+      Outcome       : out Scan_Result)
    is
       Is_Negative : Boolean;
       Body_First  : Positive;
       Body_Last   : Natural;
    begin
+      Lit := (others => <>);
       if Image'Length = 0 then
-         return (Status => Error, Reason => Empty_Input, Position => 1);
+         Outcome := Failed_At (Empty_Input, 1);
+         return;
       end if;
       Strip_Sign (Image, Is_Negative, Body_First, Body_Last);
+      Lit.Is_Negative := Is_Negative;
       if Body_First > Body_Last then
-         return (Status => Error, Reason => Empty_Digits,
-                 Position => Body_First - Image'First + 1);
+         Outcome := Failed_At (Empty_Digits, Body_First - Image'First + 1);
+         return;
       end if;
 
       declare
@@ -829,48 +890,197 @@ package body Radix_Literals with SPARK_Mode => Off is
       begin
          case Fmt.Kind is
             when Format_Empty =>
-               return (Status => Error, Reason => Empty_Digits,
-                       Position => Slice_Off + 1);
+               Outcome := Failed_At (Empty_Digits, Slice_Off + 1);
             when Format_Decimal =>
-               return Parse_Decimal_Path
-                        (Image => Body_Slice, Slice_Offset => Slice_Off,
-                         Is_Negative => Is_Negative,
-                         Decimal_Point => Decimal_Point);
+               Lit.Kind := Format_Decimal;
+               Scan_Decimal (Body_Slice, Slice_Off, Is_Negative,
+                             Decimal_Point, P, Outcome);
             when Format_Prefixed =>
-               return Parse_Prefixed_Path
-                        (Image => Body_Slice, Slice_Offset => Slice_Off,
-                         Base => Fmt.Prefix_Base,
-                         Is_Negative => Is_Negative);
+               Lit.Kind := Format_Prefixed;
+               Lit.Base := Fmt.Prefix_Base;
+               Scan_Prefixed (Body_Slice, Slice_Off, Lit.Base,
+                              Lit.Digits_First, Lit.Digits_Last, Outcome);
             when Format_Based =>
-               return Parse_Based_Path
-                        (Image => Body_Slice, Slice_Offset => Slice_Off,
-                         Is_Negative => Is_Negative);
+               Lit.Kind := Format_Based;
+               Scan_Based (Body_Slice, Slice_Off, Lit.Base,
+                           Lit.Digits_First, Lit.Digits_Last,
+                           Lit.Exponent, Outcome);
          end case;
       end;
+   end Scan_Literal;
+
+   -----------------------------------------------------------------------
+   --  Exact value construction (never evaluates a power of the radix).
+   -----------------------------------------------------------------------
+
+   --  Acc := Acc * Radix + each digit of Pieces, in order.
+   procedure Append_Digits
+     (Acc    : in out BI.Big_Integer;
+      Radix  : BI.Big_Integer;
+      Pieces : Vaton.Digit_Array.Unbound_Array)
+   is
+      Len : constant Natural := Vaton.Digit_Array.Length (Pieces);
+      First : constant Positive := Vaton.Digit_Array.First_Index (Pieces);
+   begin
+      for K in 0 .. Len - 1 loop
+         Acc := Acc * Radix
+                + BI.To_Big_Integer
+                    (Integer (Vaton.Digit_Array.Element (Pieces, First + K)));
+      end loop;
+   end Append_Digits;
+
+   function Decimal_Exact
+     (P : Vaton.Number_Pieces; Is_Negative : Boolean) return Exact_Value
+   is
+      Ten         : constant BI.Big_Integer := BI.To_Big_Integer (10);
+      Significand : BI.Big_Integer := BI.To_Big_Integer (0);
+      Scale       : BI.Big_Integer := BI.To_Big_Integer (0);
+   begin
+      Append_Digits (Significand, Ten, P.Whole);
+      Append_Digits (Significand, Ten, P.Fraction);
+
+      if P.Has_Exponent then
+         Append_Digits (Scale, Ten, P.Exponent);
+         if P.Exponent_Is_Negative then
+            Scale := -Scale;
+         end if;
+      end if;
+      Scale := Scale
+               - BI.To_Big_Integer
+                   (Vaton.Digit_Array.Length (P.Fraction));
+
+      return (Negative    => Is_Negative,
+              Significand => Significand,
+              Radix       => 10,
+              Scale       => Scale);
+   end Decimal_Exact;
+
+   function Based_Exact
+     (Image : String; Lit : Scanned_Literal) return Exact_Value
+   is
+      Significand : BI.Big_Integer;
+   begin
+      --  Exponent 0: digits only; the Ada exponent is carried as Scale.
+      Big_Accumulate (Image, Lit.Digits_First, Lit.Digits_Last, Lit.Base,
+                      0, Significand);
+      return (Negative    => Lit.Is_Negative,
+              Significand => Significand,
+              Radix       => Lit.Base,
+              Scale       => BI.To_Big_Integer (Integer (Lit.Exponent)));
+   end Based_Exact;
+
+   -----------------------------------------------------------------------
+   --  Public String entry points
+   -----------------------------------------------------------------------
+
+   function Parse
+     (Image         : String;
+      Decimal_Point : Wide_Character := '.') return Parse_Result
+   is
+      P       : Vaton.Number_Pieces;
+      Lit     : Scanned_Literal;
+      Outcome : Scan_Result;
+   begin
+      Scan_Literal (Image, Decimal_Point, P, Lit, Outcome);
+      if Outcome.Failed then
+         return (Status => Error, Reason => Outcome.Reason,
+                 Position => Outcome.Position);
+      end if;
+
+      case Lit.Kind is
+         when Format_Empty =>
+            return (Status => Error, Reason => Empty_Digits, Position => 1);
+         when Format_Decimal =>
+            return (Status => Ok, Value => Vaton.To_Number (P));
+         when Format_Prefixed | Format_Based =>
+            return Finish_Non_Decimal
+                     (Image, Lit.Digits_First, Lit.Digits_Last, Lit.Base,
+                      Lit.Exponent, Lit.Is_Negative,
+                      End_Pos => Image'Length);
+      end case;
    end Parse;
+
+   function Parse_Exact
+     (Image         : String;
+      Decimal_Point : Wide_Character := '.') return Exact_Result
+   is
+      P       : Vaton.Number_Pieces;
+      Lit     : Scanned_Literal;
+      Outcome : Scan_Result;
+   begin
+      Scan_Literal (Image, Decimal_Point, P, Lit, Outcome);
+      if Outcome.Failed then
+         return (Status => Error, Reason => Outcome.Reason,
+                 Position => Outcome.Position);
+      end if;
+
+      case Lit.Kind is
+         when Format_Empty =>
+            return (Status => Error, Reason => Empty_Digits, Position => 1);
+         when Format_Decimal =>
+            return (Status => Ok,
+                    Value  => Decimal_Exact (P, Lit.Is_Negative));
+         when Format_Prefixed | Format_Based =>
+            return (Status => Ok, Value => Based_Exact (Image, Lit));
+      end case;
+   end Parse_Exact;
 
    -----------------------------------------------------------------------
    --  Wide_String and Wide_Wide_String overloads
    -----------------------------------------------------------------------
 
-   function Parse
-     (Image         : Wide_String;
-      Decimal_Point : Wide_Character := '.') return Parse_Result
+   procedure Narrow_Image
+     (Image   : Wide_String;
+      Narrow  : out String;
+      Outcome : out Scan_Result)
    is
-      Narrow : String (1 .. Image'Length);
    begin
       for I in Image'Range loop
          declare
-            Pos : constant Natural :=
-              Wide_Character'Pos (Image (I));
+            Pos : constant Natural := Wide_Character'Pos (Image (I));
          begin
             if Pos > 127 then
-               return (Status => Error, Reason => Invalid_Character,
-                       Position => I - Image'First + 1);
+               Outcome := Failed_At (Invalid_Character, I - Image'First + 1);
+               return;
             end if;
             Narrow (I - Image'First + 1) := Character'Val (Pos);
          end;
       end loop;
+      Outcome := (Failed => False);
+   end Narrow_Image;
+
+   procedure Narrow_Image
+     (Image   : Wide_Wide_String;
+      Narrow  : out String;
+      Outcome : out Scan_Result)
+   is
+   begin
+      for I in Image'Range loop
+         declare
+            Pos : constant Natural := Wide_Wide_Character'Pos (Image (I));
+         begin
+            if Pos > 127 then
+               Outcome := Failed_At (Invalid_Character, I - Image'First + 1);
+               return;
+            end if;
+            Narrow (I - Image'First + 1) := Character'Val (Pos);
+         end;
+      end loop;
+      Outcome := (Failed => False);
+   end Narrow_Image;
+
+   function Parse
+     (Image         : Wide_String;
+      Decimal_Point : Wide_Character := '.') return Parse_Result
+   is
+      Narrow  : String (1 .. Image'Length);
+      Outcome : Scan_Result;
+   begin
+      Narrow_Image (Image, Narrow, Outcome);
+      if Outcome.Failed then
+         return (Status => Error, Reason => Outcome.Reason,
+                 Position => Outcome.Position);
+      end if;
       return Parse (Narrow, Decimal_Point);
    end Parse;
 
@@ -878,21 +1088,45 @@ package body Radix_Literals with SPARK_Mode => Off is
      (Image         : Wide_Wide_String;
       Decimal_Point : Wide_Character := '.') return Parse_Result
    is
-      Narrow : String (1 .. Image'Length);
+      Narrow  : String (1 .. Image'Length);
+      Outcome : Scan_Result;
    begin
-      for I in Image'Range loop
-         declare
-            Pos : constant Natural :=
-              Wide_Wide_Character'Pos (Image (I));
-         begin
-            if Pos > 127 then
-               return (Status => Error, Reason => Invalid_Character,
-                       Position => I - Image'First + 1);
-            end if;
-            Narrow (I - Image'First + 1) := Character'Val (Pos);
-         end;
-      end loop;
+      Narrow_Image (Image, Narrow, Outcome);
+      if Outcome.Failed then
+         return (Status => Error, Reason => Outcome.Reason,
+                 Position => Outcome.Position);
+      end if;
       return Parse (Narrow, Decimal_Point);
    end Parse;
+
+   function Parse_Exact
+     (Image         : Wide_String;
+      Decimal_Point : Wide_Character := '.') return Exact_Result
+   is
+      Narrow  : String (1 .. Image'Length);
+      Outcome : Scan_Result;
+   begin
+      Narrow_Image (Image, Narrow, Outcome);
+      if Outcome.Failed then
+         return (Status => Error, Reason => Outcome.Reason,
+                 Position => Outcome.Position);
+      end if;
+      return Parse_Exact (Narrow, Decimal_Point);
+   end Parse_Exact;
+
+   function Parse_Exact
+     (Image         : Wide_Wide_String;
+      Decimal_Point : Wide_Character := '.') return Exact_Result
+   is
+      Narrow  : String (1 .. Image'Length);
+      Outcome : Scan_Result;
+   begin
+      Narrow_Image (Image, Narrow, Outcome);
+      if Outcome.Failed then
+         return (Status => Error, Reason => Outcome.Reason,
+                 Position => Outcome.Position);
+      end if;
+      return Parse_Exact (Narrow, Decimal_Point);
+   end Parse_Exact;
 
 end Radix_Literals;

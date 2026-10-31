@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-10-31
+
+### Added
+- `Parse_Exact` (`String`, `Wide_String`, `Wide_Wide_String` overloads)
+  returning `Exact_Result`: the exact value of any literal `Parse` accepts,
+  as `(-1 if Negative) * Significand * Radix ** Scale`, with the same
+  accept/reject decisions and `Reason`/`Position` as `Parse`. `Significand`
+  and `Scale` are `Ada.Numerics.Big_Numbers.Big_Integers.Big_Integer`; the
+  library never forms `Radix ** Scale`. New types: `Radix_Range`,
+  `Exact_Value`, `Exact_Result`.
+
+### Fixed
+- Decimal numerals with an explicit zero exponent (`2.5e0`, `7E+0`,
+  `1.5e-0_0`, ...) parsed as `1`: vaton short-circuits a zero exponent in
+  both its machine-float and `Big_Real` paths. The decimal path now holds
+  the exponent back and drops it when it is zero (a numeral without fraction
+  gets `.0` instead, so it stays a floating-point value).
+
 ## [Unreleased]
 
 ### Added
@@ -24,12 +42,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AUnit test suite covering the full grammar matrix, sign handling,
   underscore rules, digit-vs-base validation, structural errors, and the
   generic facade.
-
-### Fixed
-- Decimal numerals with an explicit zero exponent (`2.5e0`, `7E+0`,
-  `1.5e-0_0`, ...) parsed as `1`: vaton short-circuits a zero exponent in
-  both its machine-float and `Big_Real` paths. The decimal path now holds
-  the exponent back and drops it when it is zero (a numeral without fraction
-  gets `.0` instead, so it stays a floating-point value).
 
 [Unreleased]: https://example.invalid/radix_literals/compare/HEAD

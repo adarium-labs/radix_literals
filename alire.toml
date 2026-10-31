@@ -1,6 +1,6 @@
 name = "radix_literals"
 description = "Parse multi-radix numeric literals (hex, octal, binary, based)"
-version = "0.1.0"
+version = "0.1.1"
 
 authors = ["Heziode"]
 maintainers = ["Quentin DAUPRAT (Heziode) <contact@adarium.dev>"]

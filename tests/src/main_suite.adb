@@ -13,6 +13,7 @@ with Underscore_Tests;
 with Based_Exponent_Tests;
 with Generic_Facade_Tests;
 with Wide_String_Tests;
+with Exact_Tests;
 
 package body Main_Suite is
 
@@ -27,6 +28,8 @@ package body Main_Suite is
      AUnit.Test_Caller (Generic_Facade_Tests.Test_Fixture);
    package Wid_Caller is new
      AUnit.Test_Caller (Wide_String_Tests.Test_Fixture);
+   package Exa_Caller is new
+     AUnit.Test_Caller (Exact_Tests.Test_Fixture);
 
    function Suite return Access_Test_Suite is
       S : constant Access_Test_Suite := new Test_Suite;
@@ -203,6 +206,47 @@ package body Main_Suite is
       S.Add_Test (Wid_Caller.Create
         ("Wide: Wide_Wide_Non_Ascii_Rejected",
          Wide_String_Tests.Wide_Wide_Non_Ascii_Rejected'Access));
+
+      --  Parse_Exact tests
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Decimal_16_To_18_Digits",
+         Exact_Tests.Decimal_16_To_18_Digits'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Decimal_Fraction_And_Exponent",
+         Exact_Tests.Decimal_Fraction_And_Exponent'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Negative_Zero",
+         Exact_Tests.Negative_Zero'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Huge_And_Tiny_Exponents",
+         Exact_Tests.Huge_And_Tiny_Exponents'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Based_Exact_Forms",
+         Exact_Tests.Based_Exact_Forms'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Based_Exponent_At_Natural_Max",
+         Exact_Tests.Based_Exponent_At_Natural_Max'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Prefixed_Exact_Forms",
+         Exact_Tests.Prefixed_Exact_Forms'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Underscores_And_Signs",
+         Exact_Tests.Underscores_And_Signs'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Decimal_Point_Comma",
+         Exact_Tests.Decimal_Point_Comma'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Wide_Overloads",
+         Exact_Tests.Wide_Overloads'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Errors_Match_Parse",
+         Exact_Tests.Errors_Match_Parse'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Overflow_Matches_Parse",
+         Exact_Tests.Overflow_Matches_Parse'Access));
+      S.Add_Test (Exa_Caller.Create
+        ("Exact: Corpus_Agrees_With_Parse",
+         Exact_Tests.Corpus_Agrees_With_Parse'Access));
 
       return S;
    end Suite;

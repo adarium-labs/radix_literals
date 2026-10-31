@@ -74,6 +74,69 @@ alr build
 ./bin/example
 ```
 
+## Exact values: `Parse_Exact`
+
+`Parse` returns a `Vaton.Number`, which Vaton narrows to the smallest
+standard type. A decimal with 16 to 18 significant digits becomes a
+floating-point kind, so the value no longer determines the literal exactly.
+`Parse_Exact` returns the exact value instead, in the shape
+
+```
+value = (-1 if Negative) * Significand * Radix ** Scale
+```
+
+```ada
+type Exact_Value is record
+   Negative    : Boolean;
+   Significand : Ada.Numerics.Big_Numbers.Big_Integers.Big_Integer; -- >= 0
+   Radix       : Radix_Range;  -- 2 .. 16: 10 for decimals, the base otherwise
+   Scale       : Ada.Numerics.Big_Numbers.Big_Integers.Big_Integer;
+end record;
+
+type Exact_Result (Status : Parse_Status := Error) is record
+   case Status is
+      when Ok    => Value : Exact_Value;
+      when Error => Reason : Error_Kind; Position : Positive;
+   end case;
+end record;
+
+function Parse_Exact
+  (Image : String; Decimal_Point : Wide_Character := '.')
+   return Exact_Result;
+--  plus Wide_String and Wide_Wide_String overloads, as for Parse
+```
+
+- `Parse_Exact` accepts and rejects exactly the literals `Parse` does, with
+  the same `Reason` and `Position` on failure.
+- Decimals: `Significand` is all digits, whole part then fraction;
+  `Scale` is the exponent minus the number of fraction digits.
+  `1.25e3` is `(125, Radix 10, Scale 1)`.
+- `0x` / `0o` / `0b` and Ada based literals: `Radix` is the base and `Scale`
+  is the Ada exponent (0 for prefixed literals). `16#FF#E2` is
+  `(255, Radix 16, Scale 2)`.
+- `Negative` is kept for zero: `-0.0` is `Negative` with `Significand = 0`.
+- The representation is not normalised: `7e0` is `(70, Scale -1)`, the same
+  as `7.0`.
+- `Significand` and `Scale` are unbounded `Big_Integer` values (the type
+  `Vaton` uses), so `Scale` never overflows. The library never evaluates
+  `Radix ** Scale`, so a based exponent such as `2#1#E2147483647` is returned
+  without building a power of two.
+- Vaton's decimal exponent limit still applies: `1e999999999` is `Overflow`
+  from both `Parse` and `Parse_Exact`.
+
+```ada
+declare
+   use Ada.Numerics.Big_Numbers.Big_Integers;
+   R : constant Radix_Literals.Exact_Result :=
+     Radix_Literals.Parse_Exact ("-1234567890.12345678");
+begin
+   --  R.Value.Negative = True
+   --  R.Value.Significand = 123456789012345678
+   --  R.Value.Radix = 10, R.Value.Scale = -8
+   null;
+end;
+```
+
 ## Two-layer error model
 
 `Parse` never raises for user-input errors. It returns a discriminated
@@ -152,7 +215,11 @@ Reproduce the current gnatprove run with:
 alr gnatprove --level=1 --output=oneline
 ```
 
-Expected outcome at the time of writing:
+Version 0.1.1 adds `Parse_Exact` and its types to the public specs. Its
+proof summary is not measured in that release: gnatprove was not installed
+where 0.1.1 was built. Run the command above to measure it.
+
+Expected outcome at the time of writing (0.1.0):
 
 - All checks on the public specs are proved.
 - 3 initialization checks on the prove harness remain "medium" because
