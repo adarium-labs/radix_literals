@@ -14,6 +14,9 @@ with Based_Exponent_Tests;
 with Generic_Facade_Tests;
 with Wide_String_Tests;
 with Exact_Tests;
+with Float_Range_Tests;
+with Budget_Tests;
+with Bounds_Tests;
 
 package body Main_Suite is
 
@@ -30,6 +33,12 @@ package body Main_Suite is
      AUnit.Test_Caller (Wide_String_Tests.Test_Fixture);
    package Exa_Caller is new
      AUnit.Test_Caller (Exact_Tests.Test_Fixture);
+   package Flr_Caller is new
+     AUnit.Test_Caller (Float_Range_Tests.Test_Fixture);
+   package Bnd_Caller is new
+     AUnit.Test_Caller (Bounds_Tests.Test_Fixture);
+   package Bud_Caller is new
+     AUnit.Test_Caller (Budget_Tests.Test_Fixture);
 
    function Suite return Access_Test_Suite is
       S : constant Access_Test_Suite := new Test_Suite;
@@ -236,6 +245,9 @@ package body Main_Suite is
         ("Exact: Decimal_Point_Comma",
          Exact_Tests.Decimal_Point_Comma'Access));
       S.Add_Test (Exa_Caller.Create
+        ("Exact: Invalid_Decimal_Point",
+         Exact_Tests.Invalid_Decimal_Point'Access));
+      S.Add_Test (Exa_Caller.Create
         ("Exact: Wide_Overloads",
          Exact_Tests.Wide_Overloads'Access));
       S.Add_Test (Exa_Caller.Create
@@ -247,6 +259,90 @@ package body Main_Suite is
       S.Add_Test (Exa_Caller.Create
         ("Exact: Corpus_Agrees_With_Parse",
          Exact_Tests.Corpus_Agrees_With_Parse'Access));
+
+      --  Float range tests (Vaton overflow guard)
+      S.Add_Test (Flr_Caller.Create
+        ("Float range: Overflow_Float_Power",
+         Float_Range_Tests.Overflow_Float_Power'Access));
+      S.Add_Test (Flr_Caller.Create
+        ("Float range: Overflow_Float_Product",
+         Float_Range_Tests.Overflow_Float_Product'Access));
+      S.Add_Test (Flr_Caller.Create
+        ("Float range: Overflow_Long_Float",
+         Float_Range_Tests.Overflow_Long_Float'Access));
+      S.Add_Test (Flr_Caller.Create
+        ("Float range: Overflow_Long_Long_Float",
+         Float_Range_Tests.Overflow_Long_Long_Float'Access));
+      S.Add_Test (Flr_Caller.Create
+        ("Float range: Threshold_Edges",
+         Float_Range_Tests.Threshold_Edges'Access));
+      S.Add_Test (Flr_Caller.Create
+        ("Float range: Decimal_Point_Comma_Class",
+         Float_Range_Tests.Decimal_Point_Comma_Class'Access));
+      S.Add_Test (Flr_Caller.Create
+        ("Float range: Comma_Is_Not_Dropped",
+         Float_Range_Tests.Comma_Is_Not_Dropped'Access));
+      S.Add_Test (Flr_Caller.Create
+        ("Float range: Never_Raises_Sweep",
+         Float_Range_Tests.Never_Raises_Sweep'Access));
+
+      --  Budget tests (no raise; Overflow beyond budget)
+      S.Add_Test (Bud_Caller.Create
+        ("Budget: Big_Denominator_Repros",
+         Budget_Tests.Big_Denominator_Repros'Access));
+      S.Add_Test (Bud_Caller.Create
+        ("Budget: Big_Real_Safe_Operations",
+         Budget_Tests.Big_Real_Safe_Operations'Access));
+      S.Add_Test (Bud_Caller.Create
+        ("Budget: Digit_Budget_Boundary",
+         Budget_Tests.Digit_Budget_Boundary'Access));
+      S.Add_Test (Bud_Caller.Create
+        ("Budget: Digit_Budget_Repros",
+         Budget_Tests.Digit_Budget_Repros'Access));
+      S.Add_Test (Bud_Caller.Create
+        ("Budget: Exponent_Digits_Repros",
+         Budget_Tests.Exponent_Digits_Repros'Access));
+      S.Add_Test (Bud_Caller.Create
+        ("Budget: Based_Power_Repros",
+         Budget_Tests.Based_Power_Repros'Access));
+      S.Add_Test (Bud_Caller.Create
+        ("Budget: Denominator_Budget_Boundary",
+         Budget_Tests.Denominator_Budget_Boundary'Access));
+      S.Add_Test (Bud_Caller.Create
+        ("Budget: Budget_Sweep",
+         Budget_Tests.Budget_Sweep'Access));
+
+      --  Bounds tests (decimal point, Positive'Last, huge input, budgets)
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Exact_Based_Exponent_Beyond_Natural",
+         Bounds_Tests.Exact_Based_Exponent_Beyond_Natural'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Zero_Exponent_Uses_Decimal_Point",
+         Bounds_Tests.Zero_Exponent_Uses_Decimal_Point'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Strings_Ending_At_Positive_Last",
+         Bounds_Tests.Strings_Ending_At_Positive_Last'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Huge_Inputs_Are_Bounded",
+         Bounds_Tests.Huge_Inputs_Are_Bounded'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Synthetic_Digit_Not_Charged",
+         Bounds_Tests.Synthetic_Digit_Not_Charged'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Syntax_Before_Limits",
+         Bounds_Tests.Syntax_Before_Limits'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Leading_Zeros_Are_Normalised",
+         Bounds_Tests.Leading_Zeros_Are_Normalised'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: No_Digit_Array_Leak",
+         Bounds_Tests.No_Digit_Array_Leak'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Positive_Scale_Boundary",
+         Bounds_Tests.Positive_Scale_Boundary'Access));
+      S.Add_Test (Bnd_Caller.Create
+        ("Bounds: Format_Delimiter_Decimal_Points",
+         Bounds_Tests.Format_Delimiter_Decimal_Points'Access));
 
       return S;
    end Suite;

@@ -17,6 +17,7 @@ package body Exact_Tests is
    use type RL.Parse_Status;
    use type RL.Error_Kind;
    use type BI.Big_Integer;
+   use type Vaton.Number_Kind;
 
    --  Decimal text of a Big_Integer, without the leading blank that
    --  To_String may emit for non-negative values.
@@ -135,9 +136,8 @@ package body Exact_Tests is
       Assert_Exact ("-3.5e0", True, "35", 10, "-1",
                     "zero exponent with fraction");
       Assert_Exact ("7e1", False, "7", 10, "1", "integer with exponent");
-      --  A zero exponent on a fraction-less numeral is held as ".0"
-      --  (see Parse), so the significand is 70 with scale -1.
-      Assert_Exact ("7e0", False, "70", 10, "-1",
+      --  A zero exponent is the same as none: 7e0 is (7, Scale 0).
+      Assert_Exact ("7e0", False, "7", 10, "0",
                     "zero exponent without fraction");
    end Decimal_Fraction_And_Exponent;
 
@@ -151,17 +151,22 @@ package body Exact_Tests is
 
    procedure Huge_And_Tiny_Exponents (T : in out Test_Fixture) is
    begin
-      --  Parse_Exact never builds a Vaton.Number, so it does not pay for
-      --  the power of ten Parse would build; the exponent limit is the
-      --  one vaton enforces in Is_Valid_Number, shared with Parse.
       Assert_Exact ("1e400", False, "1", 10, "400", "1e400");
       Assert_Exact ("1e-400", False, "1", 10, "-400", "1e-400");
       Assert_Exact ("1e1000", False, "1", 10, "1000", "1e1000");
       Assert_Exact ("-2.5e-1000", True, "25", 10, "-1001", "fraction, -1000");
-      Assert_Same_As_Parse ("1e999999999999999999999",
-                            "21-digit exponent, rejected by vaton");
-      Assert (RL.Parse_Exact (String'("1e999999999999999999999")).Reason = RL.Overflow,
-              "21-digit exponent: Parse_Exact rejects as Overflow");
+      --  Parse_Exact reads the exponent exactly (up to Vaton's 1900-digit
+      --  budget); Parse keeps Vaton's exponent-length limit.
+      Assert_Exact ("1e999999999999999999999", False, "1", 10,
+                    "999999999999999999999", "21-digit exponent");
+      Assert (RL.Parse (String'("1e999999999999999999999")).Reason
+              = RL.Overflow,
+              "21-digit exponent: Parse keeps Vaton's limit (Overflow)");
+      Assert (RL.Parse_Exact (String'("1e" & [1 .. 1901 => '1'])).Reason
+              = RL.Overflow,
+              "exponent beyond 1900 digits is Overflow in Parse_Exact");
+      Assert_Exact ("2.5e-" & String'([1 .. 1000 => '0']) & "1", False,
+                    "25", 10, "-2", "1000-digit exponent (value -1)");
    end Huge_And_Tiny_Exponents;
 
    procedure Based_Exact_Forms (T : in out Test_Fixture) is
@@ -209,15 +214,48 @@ package body Exact_Tests is
    end Underscores_And_Signs;
 
    procedure Decimal_Point_Comma (T : in out Test_Fixture) is
+      R : constant RL.Exact_Result :=
+        RL.Parse_Exact (String'("1,5e2"), ',');
+      P : constant RL.Parse_Result := RL.Parse (String'("1,5e2"), ',');
    begin
-      --  The grammar only recognises '.' as the fraction separator; a ','
-      --  is Invalid_Character here for Parse and Parse_Exact alike.
-      Assert_Same_As_Parse ("1,5e2", "comma with Decimal_Point ','");
-      Assert (RL.Parse_Exact (String'("1,5e2"), ',').Reason = RL.Invalid_Character,
-              "comma: Invalid_Character");
-      Assert_Exact ("1.5e2", False, "15", 10, "1",
-                    "explicit '.' separator");
+      --  The separator is the Decimal_Point argument: ',' is a fraction
+      --  point, '.' is then not part of the grammar.
+      Assert (R.Status = RL.Ok
+              and then Big_Image (R.Value.Significand) = "15"
+              and then Big_Image (R.Value.Scale) = "1",
+              "Decimal_Point ',': 1,5e2 is 15 * 10 ** 1");
+      Assert (P.Status = RL.Ok and then P.Value.Kind = Vaton.Float,
+              "Decimal_Point ',': Parse gives a Float for 1,5e2");
+      Assert (RL.Parse_Exact (String'("1.5e2"), ',').Reason
+              = RL.Invalid_Character
+              and then RL.Parse_Exact (String'("1.5e2"), ',').Position = 2,
+              "Decimal_Point ',': '.' is Invalid_Character at 2");
    end Decimal_Point_Comma;
+
+   procedure Invalid_Decimal_Point (T : in out Test_Fixture) is
+      --  Vaton's separator rule: '+', '-', '_', 'e', 'E' and digits are
+      --  not usable; decimal literals are then Invalid_Character at 1.
+      Bad : constant array (1 .. 4) of Wide_Character :=
+        ('+', 'e', 'E', '7');
+   begin
+      for I in Bad'Range loop
+         declare
+            R : constant RL.Exact_Result :=
+              RL.Parse_Exact (String'("1.5"), Bad (I));
+            P : constant RL.Parse_Result :=
+              RL.Parse (String'("1.5"), Bad (I));
+         begin
+            Assert (R.Status = RL.Error
+                    and then R.Reason = RL.Invalid_Character
+                    and then R.Position = 1,
+                    "invalid separator: Parse_Exact must reject at 1");
+            Assert (P.Status = RL.Error
+                    and then P.Reason = RL.Invalid_Character
+                    and then P.Position = 1,
+                    "invalid separator: Parse must reject at 1");
+         end;
+      end loop;
+   end Invalid_Decimal_Point;
 
    procedure Wide_Overloads (T : in out Test_Fixture) is
       W  : constant RL.Exact_Result :=
@@ -280,8 +318,12 @@ package body Exact_Tests is
       Assert_Same_As_Parse ("1e5e5", "two exponents");
       Assert_Same_As_Parse ("G", "letter alone");
       Assert_Same_As_Parse ("0x_1", "underscore after 0x");
-      Assert_Same_As_Parse ("2#1#E9999999999",
-                            "based exponent above Natural'Last");
+      --  A based exponent above Natural'Last is the one place the two
+      --  differ: Parse reports Overflow, Parse_Exact keeps it as Scale.
+      Assert (RL.Parse (String'("2#1#E9999999999")).Reason = RL.Overflow,
+              "Parse: based exponent above Natural'Last is Overflow");
+      Assert_Exact ("2#1#E9999999999", False, "1", 2, "9999999999",
+                    "Parse_Exact: based exponent above Natural'Last");
       Assert_Same_As_Parse (String'([1 => Character'Val (200)]), "non-ASCII");
 
       declare

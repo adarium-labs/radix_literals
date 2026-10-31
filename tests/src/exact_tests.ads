@@ -20,6 +20,7 @@ package Exact_Tests is
    procedure Prefixed_Exact_Forms (T : in out Test_Fixture);
    procedure Underscores_And_Signs (T : in out Test_Fixture);
    procedure Decimal_Point_Comma (T : in out Test_Fixture);
+   procedure Invalid_Decimal_Point (T : in out Test_Fixture);
    procedure Wide_Overloads (T : in out Test_Fixture);
    procedure Errors_Match_Parse (T : in out Test_Fixture);
    procedure Overflow_Matches_Parse (T : in out Test_Fixture);
